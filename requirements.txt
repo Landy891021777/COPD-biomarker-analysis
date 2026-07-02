@@ -1,0 +1,26 @@
+# COPD Lung Gene-Expression Analysis — dependencies
+# Python 3.11+ recommended.  Install with:  pip install -r requirements.txt
+
+# --- Core data stack ---
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.13.1
+
+# --- Machine learning ---
+scikit-learn==1.5.1
+xgboost==2.1.1
+imbalanced-learn==0.12.3      # SMOTE for class imbalance (220 COPD / 108 CTRL)
+
+# --- Model interpretation ---
+shap==0.46.0
+
+# --- Visualization ---
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# --- GEO dataset retrieval (GSE47460 / GSE151052) ---
+GEOparse==2.0.4
+
+# --- Notebook / exploration ---
+jupyter==1.0.0
+ipykernel==6.29.5
