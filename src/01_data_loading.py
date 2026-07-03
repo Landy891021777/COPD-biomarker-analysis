@@ -26,6 +26,13 @@ import pandas as pd
 import requests
 import GEOparse
 
+import matplotlib
+matplotlib.use("Agg")  # headless: write PNGs without a display
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from pycombat import Combat
+
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
@@ -41,11 +48,17 @@ SOFT_URL = (
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "..", "data")
+FIG_DIR = os.path.join(HERE, "..", "figures")
 os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
 
 SOFT_PATH = os.path.join(DATA_DIR, "GSE47460_family.soft.gz")
 EXPR_OUT = os.path.join(DATA_DIR, "expr_raw.csv")
 CLIN_OUT = os.path.join(DATA_DIR, "clinical.csv")
+CORR_OUT = os.path.join(DATA_DIR, "expr_corrected.csv")
+PCA_BEFORE = os.path.join(FIG_DIR, "pca_before_batch.png")
+PCA_AFTER = os.path.join(FIG_DIR, "pca_after_batch.png")
+PCA_COMPARE = os.path.join(FIG_DIR, "pca_batch_comparison.png")
 
 
 def download_soft(url: str, dest: str) -> str:
@@ -193,16 +206,76 @@ def build_platform_matrix(gse, gpl_name: str) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Batch correction (ComBat) + PCA visualization
+# --------------------------------------------------------------------------- #
+_PLATFORM_COLORS = {"GPL6480": "#d62728", "GPL14550": "#1f77b4"}
+
+
+def _plot_pca_on_ax(ax, expr_gxs: pd.DataFrame, batch: pd.Series, title: str) -> None:
+    """PCA of samples (rows) on a genes x samples matrix, colored by batch."""
+    X = StandardScaler().fit_transform(expr_gxs.T.values)  # samples x genes
+    pcs = PCA(n_components=2, random_state=0).fit(X)
+    coords = pcs.transform(X)
+    var = pcs.explained_variance_ratio_ * 100
+    for b in batch.unique():
+        m = (batch.values == b)
+        ax.scatter(coords[m, 0], coords[m, 1], s=14, alpha=0.7,
+                   label=f"{b} (n={int(m.sum())})",
+                   color=_PLATFORM_COLORS.get(b))
+    ax.set_xlabel(f"PC1 ({var[0]:.1f}%)")
+    ax.set_ylabel(f"PC2 ({var[1]:.1f}%)")
+    ax.set_title(title)
+    ax.legend(fontsize=8, frameon=False)
+
+
+def run_combat(expr_gxs: pd.DataFrame, batch: pd.Series,
+               bio: pd.Series | None = None) -> pd.DataFrame:
+    """ComBat batch correction. Returns a genes x samples DataFrame.
+
+    expr_gxs : genes x samples (columns aligned to `batch`/`bio` index)
+    batch    : platform label per sample (the batch variable to remove)
+    bio      : optional biological label per sample to PRESERVE (e.g. disease)
+    """
+    samples = expr_gxs.columns
+    b = batch.loc[samples].values
+
+    # Drop genes with zero variance within any batch (ComBat is undefined there).
+    keep = pd.Series(True, index=expr_gxs.index)
+    for lvl in np.unique(b):
+        sub = expr_gxs.loc[:, samples[b == lvl]]
+        keep &= sub.var(axis=1) > 1e-8
+    dropped = int((~keep).sum())
+    expr_gxs = expr_gxs.loc[keep]
+    print(f"      dropped {dropped} genes with zero within-batch variance; "
+          f"{expr_gxs.shape[0]} genes remain")
+
+    Y = expr_gxs.T.values.astype(float)  # samples x genes (Combat convention)
+    X = None
+    if bio is not None:
+        # single binary column marking the biological group to protect
+        codes = pd.factorize(bio.loc[samples])[0].astype(float)
+        X = codes.reshape(-1, 1)
+        print(f"      protecting biological covariate: "
+              f"{dict(bio.loc[samples].value_counts())}")
+
+    corrected = Combat().fit_transform(Y, b, X=X)  # samples x genes
+    if np.isnan(corrected).any():
+        raise RuntimeError("ComBat produced NaNs — check batch/variance filtering")
+
+    return pd.DataFrame(corrected.T, index=expr_gxs.index, columns=samples)
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def main() -> None:
-    print(f"[1/6] Fetching {GEO_ID} SOFT file over HTTPS (first run only)...")
+    print(f"[1/10] Fetching {GEO_ID} SOFT file over HTTPS (first run only)...")
     soft = download_soft(SOFT_URL, SOFT_PATH)
     gse = GEOparse.get_GEO(filepath=soft, silent=True)
     print(f"      platforms available: {list(gse.gpls.keys())}")
     print(f"      total samples:       {len(gse.gsms)}")
 
-    print("[2/6] Building & merging per-platform expression matrices...")
+    print("[2/10] Building & merging per-platform expression matrices...")
     mats = []
     for gpl_name in PLATFORMS:
         if gpl_name not in gse.gpls:
@@ -218,7 +291,7 @@ def main() -> None:
     print(f"      merged expr_df: {expr_df.shape[0]} genes x {expr_df.shape[1]} samples "
           f"(common genes = {len(common_genes)})")
 
-    print("[3/6] Extracting clinical metadata...")
+    print("[3/10] Extracting clinical metadata...")
     rows = []
     for gsm_name, gsm in gse.gsms.items():
         chars = _characteristics(gsm)
@@ -239,7 +312,7 @@ def main() -> None:
     print("      disease_state counts:")
     print(clinical_df["disease_state"].value_counts(dropna=False).to_string())
 
-    print("[4/6] Filtering to COPD + CTRL (excluding ILD/OTHER)...")
+    print("[4/10] Filtering to COPD + CTRL (excluding ILD/OTHER)...")
     keep = clinical_df["disease_state"].isin(["COPD", "CTRL"])
     clinical_df = clinical_df[keep]
     # align expression to the same samples that survive filtering AND exist in expr
@@ -252,15 +325,54 @@ def main() -> None:
     print(f"      expr_df:     {expr_df.shape[0]} genes x {expr_df.shape[1]} samples")
     print(f"      clinical_df: {clinical_df.shape[0]} samples x {clinical_df.shape[1]} features")
 
-    print("[5/6] Saving to CSV...")
+    print("[5/10] Saving raw matrix + clinical to CSV...")
     expr_df.to_csv(EXPR_OUT)
     clinical_df.to_csv(CLIN_OUT)
     print(f"      wrote {EXPR_OUT}")
     print(f"      wrote {CLIN_OUT}")
 
-    print("[6/6] Done. Final shapes:")
-    print(f"      expr_raw.csv : {expr_df.shape}  (genes x samples)")
-    print(f"      clinical.csv : {clinical_df.shape}  (samples x features)")
+    # ----- Batch correction (GPL6480 vs GPL14550) ----- #
+    batch = clinical_df["platform"]
+    bio = clinical_df["disease_state"]
+
+    print("[6/10] PCA before correction (colored by platform)...")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    _plot_pca_on_ax(ax, expr_df, batch, "PCA before ComBat (by platform)")
+    fig.tight_layout()
+    fig.savefig(PCA_BEFORE, dpi=150)
+    plt.close(fig)
+    print(f"      wrote {PCA_BEFORE}")
+
+    print("[7/10] Running ComBat (batch=platform, preserving disease_state)...")
+    expr_corr = run_combat(expr_df, batch, bio=bio)
+    print(f"      corrected matrix: {expr_corr.shape[0]} genes x {expr_corr.shape[1]} samples")
+
+    print("[8/10] PCA after correction (colored by platform)...")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    _plot_pca_on_ax(ax, expr_corr, batch.loc[expr_corr.columns],
+                    "PCA after ComBat (by platform)")
+    fig.tight_layout()
+    fig.savefig(PCA_AFTER, dpi=150)
+    plt.close(fig)
+    print(f"      wrote {PCA_AFTER}")
+
+    print("[9/10] Side-by-side comparison figure...")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    _plot_pca_on_ax(axes[0], expr_df, batch, "Before ComBat")
+    _plot_pca_on_ax(axes[1], expr_corr, batch.loc[expr_corr.columns], "After ComBat")
+    fig.suptitle("GSE47460 platform batch effect: before vs. after ComBat", y=1.02)
+    fig.tight_layout()
+    fig.savefig(PCA_COMPARE, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"      wrote {PCA_COMPARE}")
+
+    print("[10/10] Saving corrected matrix + done.")
+    expr_corr.to_csv(CORR_OUT)
+    print(f"      wrote {CORR_OUT}")
+    print("      Final shapes:")
+    print(f"        expr_raw.csv       : {expr_df.shape}    (genes x samples)")
+    print(f"        expr_corrected.csv : {expr_corr.shape}    (genes x samples)")
+    print(f"        clinical.csv       : {clinical_df.shape}      (samples x features)")
 
 
 if __name__ == "__main__":

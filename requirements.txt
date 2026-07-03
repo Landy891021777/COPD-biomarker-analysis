@@ -11,6 +11,9 @@ scikit-learn==1.6.1
 xgboost==3.1.2
 imbalanced-learn==0.13.0      # SMOTE for class imbalance (220 COPD / 108 CTRL)
 
+# --- Batch correction ---
+pycombat==0.20               # parametric ComBat (Johnson 2007) for platform batch effects
+
 # --- Model interpretation ---
 shap==0.50.0
 
