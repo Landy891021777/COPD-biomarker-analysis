@@ -25,6 +25,12 @@ umap-learn==0.5.12            # UMAP embedding for EDA
 # --- GEO dataset retrieval (GSE47460 / GSE151052) ---
 GEOparse==2.0.4
 
+# --- Model persistence ---
+joblib==1.4.2                # save/load trained model bundle (04 -> 05)
+
+# --- Interactive dashboard ---
+streamlit==1.45.1            # app.py — 4-page dashboard + live prediction demo
+
 # --- Notebook / exploration ---
 jupyter==1.1.1
 ipykernel==6.29.5
