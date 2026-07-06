@@ -2,6 +2,8 @@
 data/
 *.gz
 *.csv
+# ...but DO track analysis result tables under results/
+!results/*.csv
 
 # --- Python ---
 __pycache__/
