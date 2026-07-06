@@ -17,9 +17,10 @@ pycombat==0.20               # parametric ComBat (Johnson 2007) for platform bat
 # --- Model interpretation ---
 shap==0.50.0
 
-# --- Visualization ---
+# --- Visualization / dimensionality reduction ---
 matplotlib==3.10.0
 seaborn==0.13.2
+umap-learn==0.5.12            # UMAP embedding for EDA
 
 # --- GEO dataset retrieval (GSE47460 / GSE151052) ---
 GEOparse==2.0.4
