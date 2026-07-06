@@ -11,9 +11,11 @@ __pycache__/
 .env
 
 # --- Trained model artifacts (binary, environment-specific) ---
-models/
+models/*
 *.joblib
 *.pkl
+# ...but DO commit the deployed model bundle so Streamlit Cloud can serve page 4
+!models/best_model_bundle.joblib
 
 # --- Common extras ---
 .ipynb_checkpoints/
