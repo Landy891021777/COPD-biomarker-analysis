@@ -52,6 +52,7 @@ from sklearn.metrics import (roc_auc_score, f1_score, precision_score,
                              confusion_matrix)
 from xgboost import XGBClassifier
 import shap
+import joblib
 
 # --------------------------------------------------------------------------- #
 # Config
@@ -60,8 +61,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "..", "data")
 FIG_DIR = os.path.join(HERE, "..", "figures")
 RES_DIR = os.path.join(HERE, "..", "results")
+MODEL_DIR = os.path.join(HERE, "..", "models")
 os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(RES_DIR, exist_ok=True)
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+MODEL_BUNDLE = os.path.join(MODEL_DIR, "best_model_bundle.joblib")
 
 RANDOM_STATE = 42
 Q_THRESH = 0.05
@@ -211,6 +216,18 @@ def main() -> None:
     best = comp["ROC_AUC"].idxmax()
     best_auc = comp.loc[best, "ROC_AUC"]
     print(f"      BEST model: {best}  (test ROC-AUC = {best_auc:.3f})")
+
+    # persist the trained best model so external validation (05) can reuse it
+    # without retraining (train -> save -> serve).
+    joblib.dump({
+        "model": models[best],
+        "name": best,
+        "genes": list(panel.index),          # 34 panel gene symbols, in order
+        "test_auc": float(best_auc),
+        "train_mean": scaler.mean_[keep],     # per-panel-gene standardization params
+        "train_scale": scaler.scale_[keep],
+    }, MODEL_BUNDLE)
+    print(f"      saved best-model bundle -> {MODEL_BUNDLE}")
 
     # ---- ROC curves ----
     print("[9/11] ROC comparison figure...")

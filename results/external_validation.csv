@@ -1,0 +1,15 @@
+metric,value
+internal_test_AUC,0.9339
+external_AUC,0.651
+AUC_gap,0.2829
+external_F1,0.7738
+external_Precision,0.7143
+external_Recall,0.8442
+external_Accuracy,0.6752
+n_external_samples,117.0
+n_COPD,77.0
+n_CTRL,40.0
+panel_genes,34.0
+panel_present,33.0
+panel_missing,1.0
+missing_fraction,0.0294

@@ -10,6 +10,11 @@ __pycache__/
 *.pyc
 .env
 
+# --- Trained model artifacts (binary, environment-specific) ---
+models/
+*.joblib
+*.pkl
+
 # --- Common extras ---
 .ipynb_checkpoints/
 *.egg-info/
