@@ -51,6 +51,7 @@ from sklearn.metrics import (roc_auc_score, f1_score, precision_score,
                              recall_score, accuracy_score, roc_curve,
                              confusion_matrix)
 from xgboost import XGBClassifier
+import shap
 
 # --------------------------------------------------------------------------- #
 # Config
@@ -70,6 +71,8 @@ PANEL_OUT = os.path.join(RES_DIR, "biomarker_panel.csv")
 COMPARE_OUT = os.path.join(RES_DIR, "model_comparison.csv")
 ROC_OUT = os.path.join(FIG_DIR, "roc_curves.png")
 CM_OUT = os.path.join(FIG_DIR, "confusion_matrix.png")
+SHAP_SUMMARY_OUT = os.path.join(FIG_DIR, "shap_summary.png")
+SHAP_BAR_OUT = os.path.join(FIG_DIR, "shap_bar.png")
 
 sns.set_style("whitegrid")
 
@@ -238,6 +241,72 @@ def main() -> None:
     fig.savefig(CM_OUT, dpi=150)
     plt.close(fig)
     print(f"      wrote {CM_OUT}")
+
+    # ---- SHAP interpretability (best model) ----
+    print(f"\n[SHAP] Explaining best model ({best}) on all {len(y)} samples...")
+    X_all = np.vstack([Xtr, Xte])
+    X_all_df = pd.DataFrame(X_all, columns=panel.index)
+
+    if best in ("XGBoost", "RandomForest"):
+        explainer = shap.TreeExplainer(models[best])
+        shap_values = explainer.shap_values(X_all_df)
+    else:  # LogisticRegression -> linear explainer
+        explainer = shap.LinearExplainer(models[best], Xtr)
+        shap_values = explainer.shap_values(X_all_df)
+    # normalise possible multi-class shapes to the positive-class (COPD) matrix
+    if isinstance(shap_values, list):
+        shap_values = shap_values[1]
+    shap_values = np.asarray(shap_values)
+    if shap_values.ndim == 3:               # (n, features, n_classes)
+        shap_values = shap_values[:, :, 1]
+
+    shap_imp = pd.Series(np.abs(shap_values).mean(axis=0),
+                         index=panel.index).sort_values(ascending=False)
+
+    # (2) beeswarm summary — top 20 genes
+    print("      SHAP summary (beeswarm, top 20)...")
+    shap.summary_plot(shap_values, X_all_df, max_display=20, show=False)
+    fig = plt.gcf(); fig.set_size_inches(9, 8)
+    fig.suptitle(f"SHAP summary — {best} (top 20 biomarkers)", y=1.02)
+    fig.tight_layout(); fig.savefig(SHAP_SUMMARY_OUT, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"      wrote {SHAP_SUMMARY_OUT}")
+
+    # (3) global importance bar plot
+    print("      SHAP global importance (bar)...")
+    shap.summary_plot(shap_values, X_all_df, plot_type="bar",
+                      max_display=len(panel), show=False)
+    fig = plt.gcf(); fig.set_size_inches(9, 9)
+    fig.suptitle(f"SHAP global feature importance — {best}", y=1.02)
+    fig.tight_layout(); fig.savefig(SHAP_BAR_OUT, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"      wrote {SHAP_BAR_OUT}")
+
+    # (4) dependence plots for the top-3 genes
+    print("      SHAP dependence plots (top 3 genes)...")
+    for rank, gene in enumerate(shap_imp.index[:3], 1):
+        shap.dependence_plot(gene, shap_values, X_all_df, show=False)
+        fig = plt.gcf(); fig.set_size_inches(6.5, 5)
+        fig.suptitle(f"SHAP dependence — {gene} (#{rank})", y=1.02)
+        out = os.path.join(FIG_DIR, f"shap_dependence_{gene}.png")
+        fig.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"      wrote {out}")
+
+    # (5) enriched biomarker panel: gene, direction, SHAP importance
+    print("[panel] Writing enriched biomarker panel...")
+    lfc = deg.loc[panel.index, "log2FC"]
+    out_panel = pd.DataFrame({
+        "gene": panel.index,
+        "lasso_coef": panel.values,
+        "log2FC": lfc.values,
+        "direction": np.where(lfc.values > 0, "up_in_COPD", "down_in_COPD"),
+        "shap_importance": shap_imp.reindex(panel.index).values,
+    }).sort_values("shap_importance", ascending=False)
+    out_panel.to_csv(PANEL_OUT, index=False)
+    print(f"      wrote {PANEL_OUT}  ({len(out_panel)} genes)")
+    print("\nTop 10 biomarkers by SHAP importance:")
+    print(out_panel.head(10)[["gene", "direction", "shap_importance"]].to_string(index=False))
 
     print(f"\nDone. Panel={len(panel)} genes | best={best} AUC={best_auc:.3f}")
 
