@@ -1,14 +1,15 @@
-# App (Streamlit dashboard) dependencies — kept minimal for fast, reliable
-# cloud deployment (Streamlit Community Cloud reads this file).
+# App (Streamlit dashboard) dependencies.
 #
-# To RUN THE FULL PIPELINE (src/01..05) you need the heavier scientific stack:
-#     pip install -r requirements-dev.txt
+# Lower-bound (not exact) pins so prebuilt wheels resolve on whatever Python
+# Streamlit Community Cloud provides (currently 3.14) — exact old pins have no
+# 3.14 wheels and would compile from source (very slow / fails).
+# xgboost is pinned to the version the model bundle was trained & pickled with.
 #
-# Tested on Python 3.13.
+# To RUN THE FULL PIPELINE (src/01..05) use:  pip install -r requirements-dev.txt
 
-numpy==2.1.3
-pandas==2.2.3
-scikit-learn==1.6.1          # required to unpickle the XGBClassifier bundle
-xgboost==3.1.2               # trained model used by the live-prediction demo
-joblib==1.4.2                # load models/best_model_bundle.joblib
-streamlit==1.45.1            # app.py — 4-page dashboard + live prediction demo
+numpy>=2.1
+pandas>=2.2
+scikit-learn>=1.6            # required to unpickle the XGBClassifier bundle
+xgboost==3.1.2               # match the trained model bundle (py3 wheel, any Python)
+joblib>=1.3                  # load models/best_model_bundle.joblib
+streamlit>=1.40             # app.py — 4-page dashboard + live prediction demo
