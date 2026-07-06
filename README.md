@@ -136,7 +136,8 @@ COPD-biomarker-analysis/
 
 ```bash
 # 1) 安裝依賴
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # 完整 pipeline 依賴
+# （只想跑 Dashboard 的話：pip install -r requirements.txt）
 
 # 2) 依序執行 pipeline（腳本會自動從 GEO 下載資料）
 python src/01_data_loading.py        # 載入 + 批次校正
